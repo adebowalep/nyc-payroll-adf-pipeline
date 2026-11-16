@@ -24,7 +24,7 @@
 			"transformations": [],
 			"scriptLines": [
 				"source(output(",
-				"          AgencyID as string,",
+				"          AgencyID as short,",
 				"          AgencyName as string",
 				"     ),",
 				"     allowSchemaDrift: false,",
