@@ -1,0 +1,15 @@
+{
+	"name": "df-nycpayroll-suleiman",
+	"properties": {
+		"trustModeClaimForMi": {
+			"value": "Disabled",
+			"editable": true
+		}
+	},
+	"location": "francecentral",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "b91fdb35-b6e9-4979-8743-15528d2c65cd",
+		"tenantId": "f958e84a-92b8-439f-a62d-4f45996b6d07"
+	}
+}
