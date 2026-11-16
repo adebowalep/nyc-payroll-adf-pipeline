@@ -1,0 +1,98 @@
+{
+	"name": "dataflow_payroll2021",
+	"properties": {
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "ds_csv_payroll2021",
+						"type": "DatasetReference"
+					},
+					"name": "src2021"
+				}
+			],
+			"sinks": [
+				{
+					"dataset": {
+						"referenceName": "ds_sql_payroll2021",
+						"type": "DatasetReference"
+					},
+					"name": "sink2021"
+				}
+			],
+			"transformations": [
+				{
+					"name": "castcols"
+				}
+			],
+			"scriptLines": [
+				"source(output(",
+				"          FiscalYear as short,",
+				"          PayrollNumber as short,",
+				"          AgencyCode as short,",
+				"          AgencyName as string,",
+				"          EmployeeID as integer,",
+				"          LastName as string,",
+				"          FirstName as string,",
+				"          AgencyStartDate as string,",
+				"          WorkLocationBorough as string,",
+				"          TitleCode as integer,",
+				"          TitleDescription as string,",
+				"          LeaveStatusasofJune30 as string,",
+				"          BaseSalary as double,",
+				"          PayBasis as string,",
+				"          RegularHours as short,",
+				"          RegularGrossPaid as double,",
+				"          OTHours as double,",
+				"          TotalOTPaid as double,",
+				"          TotalOtherPay as double",
+				"     ),",
+				"     allowSchemaDrift: false,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false) ~> src2021",
+				"src2021 derive(FiscalYear = toInteger(FiscalYear),",
+				"          PayrollNumber = toInteger(PayrollNumber),",
+				"          AgencyStartDate = toDate(AgencyStartDate, 'M/d/yyyy'),",
+				"          BaseSalary = toDouble(BaseSalary),",
+				"          RegularHours = toDouble(RegularHours),",
+				"          RegularGrossPaid = toDouble(RegularGrossPaid),",
+				"          OTHours = toDouble(OTHours),",
+				"          TotalOTPaid = toDouble(TotalOTPaid),",
+				"          TotalOtherPay = toDouble(TotalOtherPay)) ~> castcols",
+				"castcols sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     input(",
+				"          FiscalYear as integer,",
+				"          PayrollNumber as integer,",
+				"          AgencyCode as string,",
+				"          AgencyName as string,",
+				"          EmployeeID as string,",
+				"          LastName as string,",
+				"          FirstName as string,",
+				"          AgencyStartDate as date,",
+				"          WorkLocationBorough as string,",
+				"          TitleCode as string,",
+				"          TitleDescription as string,",
+				"          LeaveStatusasofJune30 as string,",
+				"          BaseSalary as double,",
+				"          PayBasis as string,",
+				"          RegularHours as double,",
+				"          RegularGrossPaid as double,",
+				"          OTHours as double,",
+				"          TotalOTPaid as double,",
+				"          TotalOtherPay as double",
+				"     ),",
+				"     deletable:false,",
+				"     insertable:true,",
+				"     updateable:false,",
+				"     upsertable:false,",
+				"     truncate:true,",
+				"     format: 'table',",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true,",
+				"     errorHandlingOption: 'stopOnFirstError') ~> sink2021"
+			]
+		}
+	}
+}
