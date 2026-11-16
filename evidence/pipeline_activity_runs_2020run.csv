@@ -1,0 +1,7 @@
+"Activity name","Activity status","Error","Activity type","Run start","Duration","Integration runtime","User properties","Activity run ID","Log"
+"dataflow_summary","Succeeded","","ExecuteDataFlow","11/16/2026, 8:14:47 PM","43s","AutoResolveIntegrationRuntime (France Central)","{}","a6f1eccf-1668-44dc-bc47-e3f06258fc78",""
+"dataflow_payroll2020","Succeeded","","ExecuteDataFlow","11/16/2026, 8:11:42 PM","3m 4s","AutoResolveIntegrationRuntime (France Central)","{}","59c53ac8-5629-46b3-b36e-b6b11e3d8b62",""
+"dataflow_payroll2021","Succeeded","","ExecuteDataFlow","11/16/2026, 8:11:42 PM","20s","AutoResolveIntegrationRuntime (France Central)","{}","1a8ab7b4-c001-47fa-a24f-e6ab7dddc84c",""
+"dataflow_title","Succeeded","","ExecuteDataFlow","11/16/2026, 8:07:00 PM","3m 17s","AutoResolveIntegrationRuntime (France Central)","{}","9c3209d1-dc11-4fa6-8a57-2c00daee6711",""
+"dataflow_emp","Succeeded","","ExecuteDataFlow","11/16/2026, 8:07:00 PM","3m 7s","AutoResolveIntegrationRuntime (France Central)","{}","dab8652f-3884-4ca4-99df-9110d9c34ed5",""
+"dataflow_agency","Succeeded","","ExecuteDataFlow","11/16/2026, 8:07:00 PM","4m 41s","AutoResolveIntegrationRuntime (France Central)","{}","f14eecce-a585-489c-941b-ff51aab9ea86",""

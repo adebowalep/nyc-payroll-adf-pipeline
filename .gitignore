@@ -1,0 +1,6 @@
+.DS_Store
+*.key
+*.pem
+secrets*
+*credentials*
+*.zip
