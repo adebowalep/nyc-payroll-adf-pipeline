@@ -1,92 +1,93 @@
-# Mapping Data Flow reference (copy/paste into ADF)
+# Mapping data flow and pipeline design reference
 
-> Status: prepared locally. NOT YET VERIFIED in ADF until you test with Data preview.
+This document describes the Azure Data Factory objects in this repository: names, settings, and the expressions used. It reflects the exported definitions in `pipeline/`, `dataflow/`, `dataset/`, and `linkedService/`, and the implementation that was executed and validated (see [verification_results.md](verification_results.md)).
 
-## Names to use (keep identical everywhere)
+## Object names
 
 | Type | Name |
 |---|---|
-| Linked service (ADLS) | `ls_adls_nycpayroll` (type AzureBlobFS) |
-| Linked service (SQL) | `ls_sql_nycpayroll` (type AzureSqlDatabase, Version = Legacy) |
+| Linked service (ADLS Gen2) | `ls_adls_nycpayroll` (type AzureBlobFS, account-key authentication) |
+| Linked service (Azure SQL) | `ls_sql_nycpayroll` (type AzureSqlDatabase, SQL authentication, connector version 1.0) |
 | CSV datasets | `ds_csv_agency`, `ds_csv_emp`, `ds_csv_title`, `ds_csv_payroll2020`, `ds_csv_payroll2021` |
 | SQL datasets | `ds_sql_agency`, `ds_sql_emp`, `ds_sql_title`, `ds_sql_payroll2020`, `ds_sql_payroll2021`, `ds_sql_summary` |
-| ADLS sink dataset | `ds_csv_staging_summary` (folder `dirstaging`) |
+| ADLS output dataset | `ds_csv_staging_summary` (folder `dirstaging`) |
 | Data flows | `dataflow_agency`, `dataflow_emp`, `dataflow_title`, `dataflow_payroll2020`, `dataflow_payroll2021`, `dataflow_summary` |
 | Pipeline | `pl_nycpayroll_main` |
 
-## CSV dataset settings (all five)
+**SQL connector version.** The ADF UI offered version 2.0 (recommended) and version 1.0. Version 1.0 was selected, following guidance that the newer connector can raise `MissingRequiredPropertyException: server is a required property` in mapping data flows. Version 2.0 was not tested here.
 
-- Type DelimitedText, comma, row delimiter default (files are CRLF, ADF auto-detects), encoding UTF-8
-- **First row as header = ON**, Quote char `"`, Escape char `\`
-- Paths (container = your container): `dirpayrollfiles/EmpMaster.csv`, `.../AgencyMaster.csv`, `.../TitleMaster.csv`, `.../nycpayroll_2021.csv`, and `dirhistoryfiles/nycpayroll_2020.csv`
-- Then: Schema tab > **Import schema** (fixes "Column not found: FiscalYear"). Preview data.
-- Keep all CSV columns as **string** on import (safe), and cast in the data flow.
+## CSV datasets
 
-## Ingestion data flows (x5): Source (CSV) -> Sink (SQL table)
+- Type DelimitedText, comma delimiter, default row delimiter (the files use CRLF and ADF detects it), UTF-8.
+- **First row as header: on.** Quote character `"`, escape character `\`.
+- Paths: `dirpayrollfiles/EmpMaster.csv`, `dirpayrollfiles/AgencyMaster.csv`, `dirpayrollfiles/TitleMaster.csv`, `dirpayrollfiles/nycpayroll_2021.csv`, and `dirhistoryfiles/nycpayroll_2020.csv`.
+- All columns are imported as **string** (Schema > Import schema) and cast inside the data flows. Importing the schema is also what prevents `Column not found` errors when a data flow references a column.
 
-Source: CSV dataset, Allow schema drift OFF. Sink: matching SQL dataset.
-Sink settings: **Table action: Truncate table** (this is what makes reruns safe; no duplicates), Update method: Insert.
-Sink > Mapping: turn **Auto mapping OFF** only if names differ. Names are identical **except**:
+Source profile checks: no blank numeric cells, all dates are `M/d/yyyy`, and no text exceeds the target VARCHAR widths.
 
-- `dataflow_payroll2021`: source column `AgencyCode` -> sink column `AgencyCode` (same name, sink table is also AgencyCode). Do NOT expect `AgencyID`.
-- `dataflow_payroll2020`: `AgencyID` -> `AgencyID`.
+## Ingestion data flows (5): CSV source to SQL sink
 
-Type handling (put a **Derived Column** between source and sink for the two payroll flows, or rely on auto-cast if preview is clean):
+Each flow reads one CSV dataset and writes one Azure SQL table. Sink settings: update method **Insert**, table action **Truncate table**. Truncating is what makes a rerun rebuild the table rather than append to it.
+
+Column names are identical between source and sink, with one deliberate difference between the payroll years:
+
+- `dataflow_payroll2020`: `AgencyID` maps to `AgencyID`.
+- `dataflow_payroll2021`: `AgencyCode` maps to `AgencyCode` (the 2021 table also uses `AgencyCode`). The rename to a common name happens later, in the summary flow.
+
+The two payroll flows add a derived column step, `castcols`, between the source and the sink, because the CSV columns are strings and the tables are typed:
 
 | Column | Expression |
 |---|---|
-| FiscalYear | `toInteger(FiscalYear)` |
-| PayrollNumber | `toInteger(PayrollNumber)` |
-| AgencyStartDate | `toDate(AgencyStartDate, 'M/d/yyyy')`  (CSV dates look like `9/12/2016`) |
+| FiscalYear, PayrollNumber | `toInteger(<col>)` |
+| AgencyStartDate | `toDate(AgencyStartDate, 'M/d/yyyy')` (CSV dates look like `9/12/2016`) |
 | BaseSalary, RegularHours, RegularGrossPaid, OTHours, TotalOTPaid, TotalOtherPay | `toDouble(<col>)` |
 
-Verified locally: no blank numeric cells, all dates are `M/d/yyyy`, no text exceeds the VARCHAR widths.
+## `dataflow_summary`
 
-## `dataflow_summary` (rubric core)
-
-Parameter (Data flow > Parameters tab): `dataflow_param_fiscalyear`, type **integer**, default `2020`.
+Parameter (Data flow > Parameters): `dataflow_param_fiscalyear`, type **integer**, default `2020`.
 
 ```
 src2020  : source ds_sql_payroll2020   (dbo.NYC_Payroll_Data_2020)
 src2021  : source ds_sql_payroll2021   (dbo.NYC_Payroll_Data_2021)
-sel2020  : Select  - keep columns in the order below
-sel2021  : Select  - same order; rename  AgencyCode -> AgencyID
-union1   : Union (by name) of sel2020 + sel2021
+sel2020  : Select, 8 columns
+sel2021  : Select, same 8 columns; AgencyCode renamed to AgencyID
+union1   : Union by name of sel2020 and sel2021
 filter1  : Filter
-derive1  : Derived Column  TotalPaid
+derive1  : Derived column TotalPaid
 agg1     : Aggregate
-sinkSQL  : Sink  ds_sql_summary
-sinkLake : Sink  ds_csv_staging_summary
+sinkSQL  : Sink ds_sql_summary
+sinkLake : Sink ds_csv_staging_summary
 ```
 
-Keep in both Selects (same order): `FiscalYear, PayrollNumber, AgencyID, AgencyName, EmployeeID, RegularGrossPaid, TotalOTPaid, TotalOtherPay`
-(only the columns needed; extra columns are harmless but renaming AgencyCode -> AgencyID is mandatory per the project brief).
-`sel2021` rule: **Name as** `AgencyID` for input column `AgencyCode`.
+Both Selects keep the same columns: `FiscalYear, PayrollNumber, AgencyID, AgencyName, EmployeeID, RegularGrossPaid, TotalOTPaid, TotalOtherPay`. The `sel2021` mapping is `AgencyID = AgencyCode`. Every pay column the calculation needs must be selected: because the calculation is null-safe, an omitted column would be treated as zero instead of failing.
 
-**filter1** (after the union - both years already harmonized):
+**filter1** runs after the union, so both years are already harmonized:
 
 ```
 toInteger(FiscalYear) >= $dataflow_param_fiscalyear
 ```
 
-**derive1** column `TotalPaid` (null-safe; a null component will not wipe out the others):
+**derive1** column `TotalPaid`:
 
 ```
 coalesce(toDouble(RegularGrossPaid), 0) + coalesce(toDouble(TotalOTPaid), 0) + coalesce(toDouble(TotalOtherPay), 0)
 ```
 
-Course version `RegularGrossPaid + TotalOTPaid + TotalOtherPay` gives the same result on this data (no nulls), but the coalesce form is the safe one. Note: negative components exist in the real data (adjustments/retro) and are deliberately **included** (net pay); do not filter them.
+Plain addition (`RegularGrossPaid + TotalOTPaid + TotalOtherPay`) gives the same result on this data because there are no nulls, but `coalesce` stops one null component from nulling the whole sum. Negative components (adjustments) exist in the data and are deliberately **included**, so `TotalPaid` is net pay.
 
-**agg1**: Group by `AgencyName`, `FiscalYear`. Aggregates: `TotalPaid` = `sum(TotalPaid)`
+**agg1**: group by `FiscalYear`, then `AgencyName`; aggregate `TotalPaid = sum(TotalPaid)`.
 
-**sinkSQL**: dataset `ds_sql_summary`, Settings > **Truncate table**. Mapping: FiscalYear, AgencyName, TotalPaid.
-**sinkLake**: dataset `ds_csv_staging_summary`, Settings > **Clear the folder**; File name option: `Output to single file` is optional (Synapse reads a folder either way - do not rely on any file name).
-Column order out of aggregate must be FiscalYear, AgencyName, TotalPaid to match the Synapse external table - add a final **Select** (or sink mapping) to force that order.
+**sinkSQL**: dataset `ds_sql_summary`, *Truncate table*; mapping `FiscalYear`, `AgencyName`, `TotalPaid`.
 
-### Sink dataset `ds_csv_staging_summary` for Synapse
+**sinkLake**: dataset `ds_csv_staging_summary`, *Clear the folder*, file name option *Default* (Spark writes many small part files; nothing downstream depends on a file name).
 
-DelimitedText, comma, **First row as header = OFF**, quote `"`, UTF-8, folder `<container>/dirstaging`, no file name.
-This matches `FIRST_ROW = 1` in `sql/synapse/01_serverless_external_objects.sql`. If you turn the header ON, change `FIRST_ROW` to 2.
+The aggregate emits `FiscalYear`, `AgencyName`, `TotalPaid` in that order (group-by columns first, in the order listed). That order matches the Synapse external table, so no extra Select was needed.
+
+### Output dataset `ds_csv_staging_summary`
+
+DelimitedText, comma, **First row as header: off**, quote `"`, UTF-8, folder `dirstaging` in the container, no file name. This matches `FIRST_ROW = 1` in [../sql/synapse/01_serverless_external_objects.sql](../sql/synapse/01_serverless_external_objects.sql). If the header were turned on, `FIRST_ROW` would have to be 2.
+
+The exported dataset still lists an unused 19-column string schema left over from an earlier schema import. The sink writes the three aggregate columns (confirmed by the staged files and the Synapse results); the stale metadata has no effect and is left as exported.
 
 ## Pipeline `pl_nycpayroll_main`
 
@@ -96,13 +97,10 @@ dataflow_emp     -+--(all 3 succeed)--> dataflow_payroll2020 -+
 dataflow_title   -+                    dataflow_payroll2021 -+--(both succeed)--> dataflow_summary
 ```
 
-- 3 `ExecuteDataFlow` activities with no dependencies (parallel).
-- payroll2020 and payroll2021: each has a **Success** arrow from **all three** (drag each of 3 green handles to each of the 2).
-- dataflow_summary: **Success** arrows from both payroll activities.
-- Parameter on dataflow_summary activity > Parameters tab > `dataflow_param_fiscalyear` > Dynamic content:
-  - Global parameter (course way): `@pipeline().globalParameters.dataflow_param_fiscalyear`
-  - Or pipeline parameter `p_fiscalyear`: `@pipeline().parameters.p_fiscalyear`
-  - Do not mix the two. Global parameter: Manage > Author > Global parameters > New (name `dataflow_param_fiscalyear`, Integer, 2020).
-  - (Inside the data flow itself the parameter is referenced as `$dataflow_param_fiscalyear`.)
-- Rerun safety: every SQL sink truncates, the lake sink clears the folder, so a rerun cannot double-count.
-- Compute: use the default Azure IR; set TTL 0 / smallest core count (General, 8 cores is the minimum) and **turn Data flow debug off when done** to avoid wasting lab time.
+- Three `ExecuteDataFlow` activities with no dependencies run in parallel.
+- `dataflow_payroll2020` and `dataflow_payroll2021` each depend on **all three** reference loads (`Succeeded`).
+- `dataflow_summary` depends on both payroll activities (`Succeeded`).
+- Pipeline parameter `p_fiscalyear` (int, default 2020) is passed to the summary flow as `dataflow_param_fiscalyear` with the dynamic content `@pipeline().parameters.p_fiscalyear`. Inside the data flow it is referenced as `$dataflow_param_fiscalyear`. A global parameter would work equally well with `@pipeline().globalParameters.<name>`; a pipeline parameter avoids global-parameter handling in a Git-enabled factory. Only one of the two should be used.
+- Every activity runs on the Auto-resolve Azure integration runtime (compute size Small: General purpose, 8 cores).
+- Rerun behavior: every SQL sink truncates and the lake sink clears its folder, so a rerun rebuilds the outputs. Verified by a second run (see [verification_results.md](verification_results.md)).
+- Cost note: data flow debug clusters bill while running; turn debug off when it is not needed.

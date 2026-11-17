@@ -1,9 +1,13 @@
 -- =====================================================================
 -- Azure SQL Database validation queries (read-only SELECTs).
--- Run AFTER a successful pipeline run. Results must be pasted/captured by
--- you; nothing here has been executed yet -> NOT YET VERIFIED.
--- Expected local values: docs/expected_summary_param2020_LOCAL.csv /
---                        docs/expected_summary_param2021_LOCAL.csv
+-- Run AFTER a successful pipeline run. Run one query at a time: the Azure
+-- portal query editor shows only the result of the last statement in a script.
+-- These queries were executed against db_nycpayroll after two pipeline runs
+-- (@p / @p2 = 2020); the observed results are recorded in
+-- docs/verification_results.md.
+-- Expected values computed locally from the CSV files:
+--   docs/expected_summary_param2020_LOCAL.csv
+--   docs/expected_summary_param2021_LOCAL.csv (not run in Azure)
 -- =====================================================================
 
 -- 1) Source row counts after the five ingestion data flows

@@ -1,77 +1,85 @@
 -- =====================================================================
--- Synapse Analytics  --  BUILT-IN SERVERLESS SQL POOL ONLY
--- No dedicated pool (DW100c) is created. No CREATE TABLE is used.
+-- Azure Synapse Analytics: BUILT-IN SERVERLESS SQL POOL
+-- Query layer over the CSV files that dataflow_summary writes to ADLS
+-- (dirstaging/). No dedicated SQL pool and no CREATE TABLE: serverless
+-- pools hold metadata only, so the table is an EXTERNAL table.
+--
 -- Run in Synapse Studio > Develop > SQL script, Connect to: Built-in.
--- Run this ONLY AFTER the pipeline has written files into dirstaging
--- (inspect the real files first - see docs/checklist).
--- Replace every <PLACEHOLDER>. Never commit real keys/SAS tokens.
+-- Run AFTER the pipeline has written files to dirstaging/, and run each
+-- numbered section separately, checking its result before the next.
+-- These statements were executed in this order and verified (25 rows,
+-- total 35,709,510.43; see docs/verification_results.md).
+--
+-- Replace every <PLACEHOLDER>. Never commit a real SAS token or password.
 -- =====================================================================
 
--- STEP A  (run while "Use database" = master)
--- You cannot create objects in master, so create a user database:
+-- 0) Create a user database (objects cannot be created in master).
+--    Run while the script is connected to master, then refresh the database
+--    list and switch the script to the new database. Each script tab has its
+--    own database selection. The lab database was named "udacity".
+--    Confirm with: SELECT DB_NAME();
 -- CREATE DATABASE udacity;
--- Then REFRESH the database dropdown, select "udacity", and run STEP B+.
 
--- STEP B  (database = udacity)
--- Needed once before creating a credential:
-IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##')
-    CREATE MASTER KEY ENCRYPTION BY PASSWORD = '<STRONG-PASSWORD-NOT-COMMITTED>';
-GO
+-- 1) Master key (required before creating a database scoped credential).
+--    Use a new strong password, stored in a password manager.
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = '<STRONG-PASSWORD-NOT-COMMITTED>';
 
--- STEP C  Credential so serverless can read YOUR storage account.
--- Option 1 (simplest, works across storage accounts): SAS token.
---   Portal > Storage account > Shared access signature (read+list, container+object,
---   short expiry). Paste WITHOUT the leading '?'.
--- Option 2: grant the Synapse workspace managed identity "Storage Blob Data Reader"
---   on the storage account and use IDENTITY = 'Managed Identity' (if the lab allows
---   role assignments).
-IF NOT EXISTS (SELECT * FROM sys.database_scoped_credentials WHERE name = 'cred_nycpayroll')
-    CREATE DATABASE SCOPED CREDENTIAL cred_nycpayroll
-    WITH IDENTITY = 'SHARED ACCESS SIGNATURE',
-         SECRET   = '<SAS-TOKEN-WITHOUT-QUESTION-MARK>';
-GO
+-- 2) Credential that lets serverless read the storage account.
+--    SAS token generated for Blob service, resource types Container + Object,
+--    permissions Read + List only, short expiry, HTTPS only. Paste the token
+--    WITHOUT the leading '?'.
+--    Alternative: grant the workspace managed identity "Storage Blob Data
+--    Reader" on the storage account and use IDENTITY = 'Managed Identity'.
+CREATE DATABASE SCOPED CREDENTIAL cred_nycpayroll
+WITH IDENTITY = 'SHARED ACCESS SIGNATURE',
+     SECRET   = '<SAS-TOKEN-WITHOUT-QUESTION-MARK>';
 
--- STEP D  External data source = the CONTAINER (file system), not the account.
--- <CONTAINER> and <STORAGE_ACCOUNT> are the exact names from the Portal.
-IF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = 'ds_nycpayroll_lake')
-    CREATE EXTERNAL DATA SOURCE ds_nycpayroll_lake
-    WITH ( LOCATION   = 'https://<STORAGE_ACCOUNT>.dfs.core.windows.net/<CONTAINER>',
-           CREDENTIAL = cred_nycpayroll );
-GO
+-- 3) External data source = the CONTAINER (file system), not the account.
+CREATE EXTERNAL DATA SOURCE ds_nycpayroll_lake
+WITH ( LOCATION   = 'https://<STORAGE_ACCOUNT>.dfs.core.windows.net/<CONTAINER>',
+       CREDENTIAL = cred_nycpayroll );
 
--- STEP E  File format. MUST match how ADF writes the files:
---   * Recommended ADF sink dataset: DelimitedText, comma, NO header row,
---     UTF-8, no quote surprises  ->  FIRST_ROW = 1 (default).
---   * If you instead keep "First row as header" ON in the sink dataset, change
---     FIRST_ROW to 2 (requires PARSER_VERSION = '2.0').
-IF NOT EXISTS (SELECT * FROM sys.external_file_formats WHERE name = 'SynapseDelimitedTextFormat')
-    CREATE EXTERNAL FILE FORMAT SynapseDelimitedTextFormat
-    WITH ( FORMAT_TYPE = DELIMITEDTEXT,
-           FORMAT_OPTIONS ( FIELD_TERMINATOR = ',',
-                            STRING_DELIMITER = '"',
-                            FIRST_ROW        = 1,
-                            USE_TYPE_DEFAULT = FALSE ) );
-GO
+-- 4) Sanity check before creating the table: can serverless read the files?
+--    Expected: one line per aggregate row (25 in the verified run).
+SELECT COUNT(*) AS lines_read
+FROM OPENROWSET(
+        BULK 'dirstaging/*.csv',
+        DATA_SOURCE = 'ds_nycpayroll_lake',
+        FORMAT = 'CSV',
+        PARSER_VERSION = '2.0'
+     ) WITH (c1 VARCHAR(200) 1) AS r;
 
--- STEP F  The external table (schema = Udacity's, column ORDER = ADF aggregate output order).
--- LOCATION is the folder inside the container where the ADF sink writes.
--- Do NOT point at a single filename: ADF writes part-* files.
-IF OBJECT_ID(N'dbo.NYC_Payroll_Summary', N'U') IS NULL
-   AND NOT EXISTS (SELECT * FROM sys.external_tables WHERE name = 'NYC_Payroll_Summary')
-    CREATE EXTERNAL TABLE dbo.NYC_Payroll_Summary (
-        [FiscalYear] int          NULL,
-        [AgencyName] varchar(50)  NULL,
-        [TotalPaid]  float        NULL
-    )
-    WITH ( LOCATION     = 'dirstaging/',
-           DATA_SOURCE  = ds_nycpayroll_lake,
-           FILE_FORMAT  = SynapseDelimitedTextFormat );
-GO
+-- 5) File format. It must match how ADF writes the files:
+--    comma-delimited, NO header row (ds_csv_staging_summary has
+--    firstRowAsHeader = false), so FIRST_ROW = 1. If the header were turned
+--    on in the sink dataset, use FIRST_ROW = 2.
+CREATE EXTERNAL FILE FORMAT SynapseDelimitedTextFormat
+WITH ( FORMAT_TYPE = DELIMITEDTEXT,
+       FORMAT_OPTIONS ( FIELD_TERMINATOR = ',',
+                        STRING_DELIMITER = '"',
+                        FIRST_ROW        = 1,
+                        USE_TYPE_DEFAULT = FALSE ) );
 
--- STEP G  Verify. Compare to the Azure SQL summary (must match; see docs).
+-- 6) External table. Column order = the aggregate output order of
+--    dataflow_summary (FiscalYear, AgencyName, TotalPaid). LOCATION is the
+--    folder, not a file name: ADF writes many part-*.csv files, and files
+--    whose names start with '_' (such as _SUCCESS) are ignored.
+CREATE EXTERNAL TABLE dbo.NYC_Payroll_Summary (
+    [FiscalYear] INT         NULL,
+    [AgencyName] VARCHAR(50) NULL,
+    [TotalPaid]  FLOAT       NULL
+)
+WITH ( LOCATION    = 'dirstaging/',
+       DATA_SOURCE = ds_nycpayroll_lake,
+       FILE_FORMAT = SynapseDelimitedTextFormat );
+
+-- 7) Verify. Compare with dbo.NYC_Payroll_Summary in Azure SQL Database.
 SELECT * FROM dbo.NYC_Payroll_Summary ORDER BY FiscalYear, AgencyName;
-SELECT COUNT(*) AS row_count, SUM(TotalPaid) AS grand_total FROM dbo.NYC_Payroll_Summary;
--- Debug helper: see raw lines + which part-file they came from
--- SELECT TOP 20 r.filepath() AS part_file, r.*
--- FROM OPENROWSET(BULK 'dirstaging/', DATA_SOURCE='ds_nycpayroll_lake',
---                 FORMAT='CSV', PARSER_VERSION='2.0') WITH (line varchar(500) 1) AS r;
+
+SELECT COUNT(*) AS row_count, SUM(TotalPaid) AS grand_total
+FROM dbo.NYC_Payroll_Summary;
+
+SELECT FiscalYear, AgencyName, COUNT(*) AS c
+FROM dbo.NYC_Payroll_Summary
+GROUP BY FiscalYear, AgencyName
+HAVING COUNT(*) > 1;            -- expect 0 rows

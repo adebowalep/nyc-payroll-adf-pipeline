@@ -3,9 +3,12 @@
 -- Run in: Azure Portal > SQL database > Query editor, or SSMS/Azure Data Studio
 -- Re-runnable: each table is created only if it does not already exist.
 -- This script never drops or deletes anything.
--- DDL = Udacity classroom baseline (widths/types verified against the real
--- CSVs: longest values are far below every VARCHAR width; see docs/).
+-- Column widths and types follow the project brief and were checked against
+-- the real CSV files: the longest values are far below every VARCHAR width
+-- (see docs/validation-and-evidence.md). FLOAT is used for amounts as in the
+-- brief; DECIMAL would be preferable for currency in a production design.
 -- NOTE: 2020 table has AgencyID; 2021 table has AgencyCode (matches the CSVs).
+-- The summary flow renames AgencyCode to AgencyID before the union.
 -- =====================================================================
 
 IF OBJECT_ID(N'dbo.NYC_Payroll_EMP_MD', N'U') IS NULL

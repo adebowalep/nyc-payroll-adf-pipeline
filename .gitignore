@@ -4,3 +4,5 @@
 secrets*
 *credentials*
 *.zip
+# Source CSVs are not published; the repo holds only aggregates and screenshots
+Data/
