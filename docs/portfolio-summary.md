@@ -12,7 +12,11 @@ An end-to-end Azure data engineering pipeline that ingests NYC payroll CSV files
 
 ## Technologies
 
-Azure Data Factory (pipelines, mapping data flows, Git integration) · Azure Data Lake Storage Gen2 · Azure SQL Database · Azure Synapse Analytics (built-in serverless SQL pool, external tables) · T-SQL · GitHub · draw.io (architecture diagram)
+**Primary stack:** Azure Data Factory · Azure Data Lake Storage Gen2 · Azure SQL Database · Azure Synapse Analytics · T-SQL
+
+**Version control:** Git and GitHub (Azure Data Factory Git integration)
+
+**Documentation:** draw.io (architecture diagram)
 
 ## My engineering contributions
 
@@ -20,7 +24,7 @@ Azure Data Factory (pipelines, mapping data flows, Git integration) · Azure Dat
 - Orchestrated six data flow activities in one pipeline with `Succeeded` dependencies: three parallel reference loads, then two parallel payroll loads, then the summary.
 - Set up a Synapse serverless query layer (external data source, file format, external table) over the staged CSV output.
 - Designed and ran the validation: row-count checks, independent SQL and CSV recomputation, duplicate and null checks, a cross-service comparison, and a rerun test.
-- Documented the architecture, decisions, results, limitations, and reproduction steps.
+- Documented the architecture, decisions, results, limitations, and reproduction steps, and added a small synthetic example dataset (with locally computed expected results) so the pipeline can be run without the original files.
 
 ## Main technical challenge
 
@@ -36,7 +40,7 @@ Producing a summary that can be trusted. The 2020 and 2021 files name the agency
 
 ## Result
 
-In the verified run, all 6 pipeline activities succeeded and the summary contained 25 rows (2 for FiscalYear 2020, 23 for 2021) with a sample total of 35,709,510.43. The row counts of every loaded table matched the source files, the reconciliation returned no differences, there were no duplicate summary keys, and the Synapse external table returned the same values. Results were unchanged after a second run.
+In the verified run, all 6 pipeline activities succeeded and the summary contained 25 rows (2 for FiscalYear 2020, 23 for 2021) with a sample total of 35,709,510.43. The row counts of every loaded table matched the source files, the reconciliation returned no differences, there were no duplicate summary keys, and the Synapse external table returned the same values. Results were unchanged after a second run. Only the fiscal-year parameter 2020 was executed in Azure; the 2021 expectation was calculated locally.
 
 ## Limitations
 

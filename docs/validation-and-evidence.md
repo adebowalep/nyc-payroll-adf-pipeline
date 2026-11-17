@@ -1,6 +1,6 @@
 # Validation and evidence index
 
-This document connects each design requirement to its implementation and to recorded evidence. All observations come from a temporary Azure lab environment (2026-11-16). Numbers are in [verification_results.md](verification_results.md); screenshots are in `../evidence/screenshots/`.
+This document connects each design requirement to its implementation and to recorded evidence. All observations come from a temporary Azure lab environment (2026-11-16), run on small sample files. The pipeline has six Execute Data Flow activities: five ingestion flows (three reference loads, two payroll loads) and one summary flow. Only the fiscal-year parameter 2020 was executed in Azure; the 2021 results were calculated locally. Numbers are in [verification_results.md](verification_results.md); screenshots are in `../evidence/screenshots/`.
 
 ## 1. Source data profile
 
@@ -34,12 +34,13 @@ Findings that shaped the design:
 | Load five CSV files into Azure SQL | Five mapping data flows; payroll flows cast types in a `castcols` derived column; every sink truncates | `06` series; row counts `10a`, `10j` |
 | Harmonize the 2020/2021 agency identifier | Select before union maps `AgencyCode` to `AgencyID` | `07`, `07b` |
 | Parameterized fiscal-year filter | `$dataflow_param_fiscalyear` driven by pipeline parameter `p_fiscalyear` | Stray 1998/1999 rows absent from the summary (`10`) |
-| Null-safe `TotalPaid` including overtime | `coalesce(toDouble(...), 0)` over the three pay columns | Reconciliation `10b`, `10c`; overtime totals `10h` |
+| Null-safe `TotalPaid` including overtime | `coalesce(toDouble(...), 0)` over the three pay columns | Independent reconciliation returned zero differences (`10b`, `10c`); overtime totals `10h` |
 | Aggregate by fiscal year and agency; two sinks | `agg1`, `sinkSQL` (truncate), `sinkLake` (clear folder) | SQL summary `10`, `10g`; staging files `11`, `11b` |
-| Dependency-based orchestration | `dependsOn` with `Succeeded` conditions in the pipeline JSON | `08`, `09`; start times in `evidence/pipeline_activity_runs_2020run.csv` |
+| Dependency-based orchestration | The three reference loads run in parallel; both payroll loads wait for all three; the summary waits for both payroll loads (`dependsOn` with `Succeeded` conditions in the pipeline JSON) | `08`, `09`; start times in `evidence/pipeline_activity_runs_2020run.csv` |
 | Serverless query layer | External data source, file format, and table over `dirstaging/` | `03`, `12`, `12a`, `12b` |
 | Rerun consistency | Second run of the whole pipeline | `09c`, `10j` to `10m`, `11c`, `12c` to `12e` |
 | Version control | ADF Git integration to GitHub | `03c`, `13` series |
+| Runnable without the original files | Synthetic example dataset with both agency-column variants; expected results computed locally, not run in Azure | [../sample-data/README.md](../sample-data/README.md) |
 | No exposed secrets | Placeholders only; SAS tokens and passwords never stored | Repository scan before publishing |
 
 ## 3. Evidence index (`evidence/screenshots/`)
@@ -62,7 +63,7 @@ Findings that shaped the design:
 
 Result exports are in `evidence/*.csv`.
 
-**Privacy.** Data-preview screenshots (`05a`, `05d`, `05f`, `06d3`, `06e2`) have the employee ID, last-name, and first-name columns redacted. The Git history of the repository still contains the earlier, unredacted versions of those five images. The underlying data come from public NYC payroll files, but no employee-level source file is published here.
+**Privacy.** Data-preview screenshots (`05a`, `05d`, `05f`, `06d3`, `06e2`) have the employee ID, last-name, and first-name columns redacted. The Git history still contains the earlier, unredacted versions of those five images: last and first names plus employee IDs, and in two of them agency start dates, boroughs, and titles, for roughly 60 employees; no pay amounts or credentials. Names, start dates, boroughs, and titles are published by the City's Office of Payroll Administration in its public Citywide Payroll Data dataset; employee IDs and title codes are not columns of that dataset. No employee-level source file is published in this repository.
 
 ## 4. Troubleshooting notes
 

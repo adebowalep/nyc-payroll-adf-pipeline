@@ -19,9 +19,9 @@ The expected values computed from the CSV files are stored in `expected_summary_
 
 ## Pipeline run
 
-- Pipeline `pl_nycpayroll_main`, triggered with `p_fiscalyear = 2020`.
+- Pipeline `pl_nycpayroll_main` has six Execute Data Flow activities: five ingestion flows (three reference loads, two payroll loads) and one summary flow. It was triggered with `p_fiscalyear = 2020`.
 - All 6 activities succeeded (`evidence/screenshots/09_*`, `evidence/pipeline_activity_runs_2020run.csv`).
-- Order confirmed by start times: agency, employee, and title loads started together (20:07:00); both payroll loads started at 20:11:42, one second after the slowest reference load finished; `dataflow_summary` started at 20:14:47, one second after `dataflow_payroll2020` finished.
+- Order confirmed by start times: agency, employee, and title loads started together (20:07:00); both payroll loads started at 20:11:42, one second after the slowest reference load finished; `dataflow_summary` started at 20:14:47, one second after `dataflow_payroll2020` (the slower of the two payroll loads) finished, so the summary ran only after both payroll loads had succeeded.
 
 ## Azure SQL row counts after the run
 

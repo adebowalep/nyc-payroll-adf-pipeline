@@ -1,6 +1,6 @@
 # Mapping data flow and pipeline design reference
 
-This document describes the Azure Data Factory objects in this repository: names, settings, and the expressions used. It reflects the exported definitions in `pipeline/`, `dataflow/`, `dataset/`, and `linkedService/`, and the implementation that was executed and validated (see [verification_results.md](verification_results.md)).
+This document describes the Azure Data Factory objects in this repository: names, settings, and the expressions used. It reflects the exported definitions in `pipeline/`, `dataflow/`, `dataset/`, and `linkedService/`, and the implementation that was executed in a temporary Azure lab on sample files and validated (see [verification_results.md](verification_results.md)). Only `p_fiscalyear = 2020` was executed in Azure.
 
 ## Object names
 

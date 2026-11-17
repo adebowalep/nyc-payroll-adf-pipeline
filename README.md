@@ -17,9 +17,11 @@ An end-to-end Azure data engineering pipeline that ingests NYC payroll datasets,
 
 ## Solution Architecture
 
-![NYC Payroll Analytics — End-to-End Azure Data Pipeline](docs/images/architecture.svg)
+[![NYC Payroll Analytics — End-to-End Azure Data Pipeline](docs/images/architecture.svg)](docs/images/architecture.svg)
 
-*Click the diagram to view it full-size. Editable source: [docs/architecture.drawio](docs/architecture.drawio) (open in diagrams.net). Exported images: [SVG](docs/images/architecture.svg), [PNG](docs/images/architecture.png).*
+*Click the diagram to open it full-size (the text is small on narrow screens). Editable source: [docs/architecture.drawio](docs/architecture.drawio) (open in diagrams.net). Exported images: [SVG](docs/images/architecture.svg), [PNG](docs/images/architecture.png).*
+
+**In words:** source CSV files land in ADLS Gen2; Azure Data Factory loads three reference tables in parallel, then two payroll tables in parallel, into Azure SQL Database; a summary data flow reads both payroll tables and writes the aggregate to an Azure SQL table and to CSV files in `dirstaging/`.
 
 Synapse reads the staged CSV files in ADLS `dirstaging/` through a serverless external table. It does not read the Azure SQL summary table; the two sinks are independent copies of the same aggregate, which is what made cross-service validation meaningful.
 
@@ -28,6 +30,8 @@ Synapse reads the staged CSV files in ADLS `dirstaging/` through a serverless ex
 ![ADF pipeline pl_nycpayroll_main](evidence/screenshots/08_pipeline_canvas.png)
 
 *Pipeline `pl_nycpayroll_main` in the ADF authoring canvas: six Execute Data Flow activities and one pipeline parameter, `p_fiscalyear` (int, default 2020).*
+
+The pipeline runs six mapping data flows: five ingestion flows (three reference loads and two payroll loads) and one summary flow.
 
 - `dataflow_agency`, `dataflow_emp`, and `dataflow_title` have no dependencies and run in parallel.
 - `dataflow_payroll2020` and `dataflow_payroll2021` each depend on all three reference loads (`Succeeded`), then run in parallel.
@@ -72,19 +76,20 @@ All results below were observed in the lab run and are recorded in [docs/verific
 
 ![Reconciliation query returning zero rows](evidence/screenshots/10b_reconciliation_zero_rows.png)
 
-**Synapse serverless** querying the staged files through the external table:
+### More evidence
 
-![Synapse external table query](evidence/screenshots/12_synapse_query.png)
+| Evidence | What it shows | File |
+|---|---|---|
+| First pipeline run | Azure Monitor view of the six successful activities with start times | [09_pipeline_run_success.png](evidence/screenshots/09_pipeline_run_success.png) |
+| Second pipeline run | All six activities succeeded again, in the same dependency order | [09c_rerun_success.png](evidence/screenshots/09c_rerun_success.png) |
+| Synapse serverless query | The external table over `dirstaging/` returns the 25 summary rows | [12_synapse_query.png](evidence/screenshots/12_synapse_query.png), after the rerun: [12c_synapse_after_rerun.png](evidence/screenshots/12c_synapse_after_rerun.png) |
+| Staging folder after the rerun | The same 25 objects, all with new names and timestamps: the previous run's files were cleared, not accumulated | [11c_dirstaging_after_rerun.png](evidence/screenshots/11c_dirstaging_after_rerun.png) |
+| Row counts after the run | The five loaded tables against the source file row counts | [10a_sql_row_counts.png](evidence/screenshots/10a_sql_row_counts.png) |
+| Quality checks | Null cells, duplicate keys, negative totals, source duplicates | [10d](evidence/screenshots/10d_quality_null_cells.png), [10e](evidence/screenshots/10e_quality_duplicate_keys.png), [10f](evidence/screenshots/10f_quality_negative_totals.png), [10i](evidence/screenshots/10i_source_duplicate_check.png) |
+| Overtime totals | `TotalOTPaid` and `OTHours` by fiscal year in the source tables | [10h_overtime_by_year.png](evidence/screenshots/10h_overtime_by_year.png) |
+| Raw result exports | Summary, activity runs, and Synapse output as CSV | [evidence/](evidence/) |
 
-**Second run** (all six activities succeeded again; start times show the same dependency order):
-
-![Second pipeline run in Azure Monitor](evidence/screenshots/09c_rerun_success.png)
-
-**Staging folder after the second run.** The same 25 objects, all with new names and timestamps, so the previous run's files were cleared and not accumulated:
-
-![dirstaging after the rerun](evidence/screenshots/11c_dirstaging_after_rerun.png)
-
-Further evidence (row counts, quality checks, overtime totals, linked service and GitHub screenshots, and the raw result exports) is in [evidence/](evidence/), indexed in [docs/validation-and-evidence.md](docs/validation-and-evidence.md).
+The full index of screenshots and result files is in [docs/validation-and-evidence.md](docs/validation-and-evidence.md).
 
 ## Engineering Decisions
 
@@ -115,6 +120,7 @@ Further evidence (row counts, quality checks, overtime totals, linked service an
 ├── sql/
 │   ├── azure_sql/      table DDL, validation queries
 │   └── synapse/        serverless external table script
+├── sample-data/        synthetic example input files and expected results
 ├── docs/
 │   ├── architecture.drawio, images/    editable diagram and exports
 │   ├── dataflow-expressions.md         data flow design reference
@@ -131,7 +137,38 @@ The ADF-managed folders are exports from Azure Data Factory Git integration and 
 
 The original Azure resources were temporary and no longer exist. This is a manual rebuild guide; there is no infrastructure-as-code or one-click deployment. Azure services incur charges, so review current pricing first.
 
-**Prerequisites:** an Azure subscription; permission to create a storage account (hierarchical namespace enabled), an Azure SQL Database, a Data Factory, and a Synapse workspace; the five source CSV files (`AgencyMaster`, `EmpMaster`, `TitleMaster`, `nycpayroll_2020`, `nycpayroll_2021`).
+**Prerequisites:** an Azure subscription; permission to create a storage account (hierarchical namespace enabled), an Azure SQL Database, a Data Factory, and a Synapse workspace; the five input CSV files described below.
+
+### Input data
+
+The pipeline expects five UTF-8, comma-delimited CSV files with a header row:
+
+| File | Columns | Upload to |
+|---|---|---|
+| `AgencyMaster.csv` | `AgencyID`, `AgencyName` | `dirpayrollfiles/` |
+| `EmpMaster.csv` | `EmployeeID`, `LastName`, `FirstName` | `dirpayrollfiles/` |
+| `TitleMaster.csv` | `TitleCode`, `TitleDescription` | `dirpayrollfiles/` |
+| `nycpayroll_2021.csv` | 19 payroll columns; agency column named `AgencyCode` | `dirpayrollfiles/` |
+| `nycpayroll_2020.csv` | the same 19 columns; agency column named `AgencyID` | `dirhistoryfiles/` |
+
+The 19 payroll columns are listed in [sample-data/README.md](sample-data/README.md); dates use `M/d/yyyy`.
+
+**Where to get them**
+
+- **Original sample files (used for the verified results).** Distributed as one ZIP by the data-engineering training program this project was based on: [data-nyc-payroll.zip](https://video.udacity-data.com/topher/2022/May/6283aff5_data-nyc-payroll/data-nyc-payroll.zip). The link responded with HTTP 200 and a 33,785-byte ZIP when checked on 2026-11-17; the archive was not downloaded or inspected for this check. It is hosted by a third party, availability is not guaranteed, and the files are not redistributed in this repository.
+- **NYC Open Data (related, but not identical).** The City publishes [Citywide Payroll Data (Fiscal Year)](https://data.cityofnewyork.us/City-Government/Citywide-Payroll-Data-Fiscal-Year-/k397-673e) through the Office of Payroll Administration. At the time of checking it exposes 17 columns and **has no `EmployeeID`, `TitleCode`, or agency-code column**, so it cannot recreate the master files or the exact payroll files without additional keys and schema mapping. A spot check of one salary and pay combination (non-personal fields only) found matching public records, so the sample rows appear to come from this dataset, but they were not verified as exact extracts. Review the portal's terms of use before reusing the data.
+- **Synthetic example (included).** [sample-data/](sample-data/) holds five tiny fictional files with the expected schemas, both the `AgencyID` and `AgencyCode` variants, and locally computed expected results. It is meant for running the pipeline end to end, not for reproducing the original figures.
+
+**What to change to reproduce the workflow**
+
+1. Upload the files to the folders above in your own container.
+2. In the linked services and datasets, replace the storage account, container, SQL server, and database names.
+3. In the Synapse script, replace `<STORAGE_ACCOUNT>` and `<CONTAINER>`.
+4. Compare your results with the files that match the data you used.
+
+**Why results may differ.** Row counts, number of agencies, totals, and the out-of-range rows depend entirely on the input files. Any dataset other than the original sample files will produce different totals than the 25 rows and 35,709,510.43 recorded here; the pipeline logic and checks, not the numbers, are what carry over.
+
+### Deployment steps
 
 1. **Storage.** Create an ADLS Gen2 account and a container with folders `dirpayrollfiles/` (four master/2021 files), `dirhistoryfiles/` (`nycpayroll_2020.csv`), and `dirstaging/` (empty).
 2. **Database.** Create an Azure SQL Database and run [sql/azure_sql/01_create_tables.sql](sql/azure_sql/01_create_tables.sql) (six tables). Allow Azure services and your client IP through the server firewall.
@@ -157,6 +194,7 @@ The original Azure resources were temporary and no longer exist. This is a manua
 | [docs/validation-and-evidence.md](docs/validation-and-evidence.md) | Source-data profile, requirement-to-evidence matrix, evidence index, troubleshooting |
 | [docs/dataflow-expressions.md](docs/dataflow-expressions.md) | Mapping data flow and pipeline design reference |
 | [docs/portfolio-summary.md](docs/portfolio-summary.md) | Short case-study summary |
+| [sample-data/README.md](sample-data/README.md) | Synthetic example input files and expected results |
 | [evidence/screenshots/](evidence/screenshots/) | Execution and validation screenshots |
 
 Screenshots of data previews have the employee ID and name columns redacted; no employee-level source files are included in this repository.
